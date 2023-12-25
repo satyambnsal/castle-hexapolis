@@ -18,8 +18,7 @@ mod actions {
 
     // import models
     use emojiman::models::{
-        GAME_DATA_KEY, GameData, Direction, Vec2, Position, PlayerAtPosition, RPSType, Energy,
-        PlayerID, PlayerAddress
+        GAME_DATA_KEY, GameData, Vec2, Position, PlayerAtPosition, TileType, PlayerID, PlayerAddress
     };
 
     // import utils
@@ -27,7 +26,7 @@ mod actions {
 
     // import config
     use emojiman::config::{
-        INITIAL_ENERGY, RENEWED_ENERGY, MOVE_ENERGY_COST, X_RANGE, Y_RANGE, ORIGIN_OFFSET,
+        INITIAL_MOVES, RENEWED_ENERGY, MOVE_ENERGY_COST, X_RANGE, Y_RANGE, ORIGIN_OFFSET,
         MAP_AMPLITUDE
     };
 
@@ -57,14 +56,10 @@ mod actions {
             // game data
             let mut game_data = get!(world, GAME_DATA_KEY, (GameData));
 
-            // increment player count
-            game_data.number_of_players += 1;
+            game_data.remaining_moves = INITIAL_MOVES;
 
             // NOTE: save game_data model with the set! macro
             set!(world, (game_data));
-
-            // assert rps type
-            assert(rps == 'r' || rps == 'p' || rps == 's', 'only r, p or s type allowed');
 
             // get player id 
             let mut player_id = get!(world, player, (PlayerID)).id;
@@ -72,25 +67,24 @@ mod actions {
             // if player id is 0, assign new id
             if player_id == 0 {
                 // Player not already spawned, prepare ID to assign
-                player_id = assign_player_id(world, game_data.number_of_players, player);
+                player_id = assign_player_id(world, game_data.remaining_moves, player);
             } else {
                 // Player already exists, clear old position for new spawn
                 let pos = get!(world, player_id, (Position));
                 clear_player_at_position(world, pos.x, pos.y);
             }
 
-            // set player type
-            set!(world, (RPSType { id: player_id, rps }));
-
             // spawn on random position
             let (x, y) = spawn_coords(world, player.into(), player_id.into());
 
             // set player position
-            player_position_and_energy(world, player_id, x, y, INITIAL_ENERGY);
+            player_position_and_tile(world, player_id, 0_u8, 0_u8, 4, true, 0_u8, 24_u8);
         }
 
+        // To be done
+
         // Queues move for player to be processed later
-        fn move(self: @ContractState, dir: Direction) {
+        fn move(self: @ContractState, x: u8, y: u8, tile_type: TileType) {
             // world dispatcher
             let world = self.world_dispatcher.read();
 
@@ -101,10 +95,7 @@ mod actions {
             let id = get!(world, player, (PlayerID)).id;
 
             // player position and energy
-            let (pos, energy) = get!(world, id, (Position, Energy));
-
-            // Clear old position
-            clear_player_at_position(world, pos.x, pos.y);
+            let (pos, score) = get!(world, id, (Position, Score));
 
             // Get new position
             let Position{id, x, y } = next_position(pos, dir);
@@ -117,9 +108,6 @@ mod actions {
             assert(
                 x <= max_x.try_into().unwrap() && y <= max_y.try_into().unwrap(), 'Out of bounds'
             );
-
-            // resolve encounter
-            let adversary = player_at_position(world, x, y);
 
             let tile = tile_at_position(x - ORIGIN_OFFSET.into(), y - ORIGIN_OFFSET.into());
             let mut move_energy_cost = MOVE_ENERGY_COST;
@@ -141,6 +129,8 @@ mod actions {
                 }
             }
         }
+
+        // To be done
 
         // ----- ADMIN FUNCTIONS -----
         // These functions are only callable by the owner of the world
@@ -185,109 +175,74 @@ mod actions {
         id
     }
 
-    // @dev: Sets no player at position
-    fn clear_player_at_position(world: IWorldDispatcher, x: u8, y: u8) {
-        set!(world, (PlayerAtPosition { x, y, id: 0 }));
-    }
+    // // @dev: Sets no player at position
+    // fn clear_player_at_position(world: IWorldDispatcher, x: u8, y: u8) {
+    //     set!(world, (PlayerAtPosition { x, y, id: 0 }));
+    // }
 
     // @dev: Returns player id at position
-    fn player_at_position(world: IWorldDispatcher, x: u8, y: u8) -> u8 {
-        get!(world, (x, y), (PlayerAtPosition)).id
+    fn player_occupied_position(world: IWorldDispatcher, id: u8, x: u8, y: u8, id: u8) -> bool {
+        get!(world, (id, x, y), (PlayerAtPosition)).occupied
     }
 
     // @dev: Sets player position and energy
-    fn player_position_and_energy(world: IWorldDispatcher, id: u8, x: u8, y: u8, amt: u8) {
-        set!(world, (PlayerAtPosition { x, y, id }, Position { x, y, id }, Energy { id, amt },));
-    }
-
-    // @dev: Kills player
-    fn player_dead(world: IWorldDispatcher, id: u8) {
-        let pos = get!(world, id, (Position));
-        let empty_player = starknet::contract_address_const::<0>();
-
-        let id_felt: felt252 = id.into();
-        let entity_keys = array![id_felt].span();
-        let player = get!(world, id, (PlayerAddress)).player;
-        let player_felt: felt252 = player.into();
-        // Remove player address and ID mappings
-
-        let mut layout = array![];
-
-        world.delete_entity('PlayerID', array![player_felt].span(), layout.span());
-        world.delete_entity('PlayerAddress', entity_keys, layout.span());
-
-        set!(world, (PlayerID { player, id: 0 }));
-        set!(world, (Position { id, x: 0, y: 0 }, RPSType { id, rps: 0 }));
-
-        // Remove player components
-        world.delete_entity('RPSType', entity_keys, layout.span());
-        world.delete_entity('Position', entity_keys, layout.span());
-        world.delete_entity('Energy', entity_keys, layout.span());
-    }
-
-    // @dev: Handles player encounters
-    // if the player dies returns false
-    // if the player kills the other player returns true
-    fn encounter(world: IWorldDispatcher, player: u8, adversary: u8) -> bool {
-        let ply_type = get!(world, player, (RPSType)).rps;
-        let adv_type = get!(world, adversary, (RPSType)).rps;
-        if encounter_win(ply_type, adv_type) {
-            // adversary dies
-            player_dead(world, adversary);
-            true
-        } else {
-            // player dies
-            player_dead(world, player);
-            false
-        }
-    }
-
-    // @dev: Returns tile id at position
-    fn tile_at_position(x: u8, y: u8) -> u8 {
-        let vec = Vec3Trait::new(
-            FixedTrait::from_felt(x.into()) / FixedTrait::from_felt(MAP_AMPLITUDE.into()),
-            FixedTrait::from_felt(0),
-            FixedTrait::from_felt(y.into()) / FixedTrait::from_felt(MAP_AMPLITUDE.into())
+    fn player_position_and_score(
+        world: IWorldDispatcher,
+        id: u8,
+        x: u8,
+        y: u8,
+        tile_type: TileType,
+        occupied: bool,
+        points: u8,
+        remaining_moves: u8
+    ) {
+        set!(
+            world,
+            (Position { id, x, y, tile_type, occupied }, Score { id, points, remaining_moves })
         );
-
-        // compute simplex noise
-        let simplex_value = simplex3::noise(vec);
-
-        // compute the value between -1 and 1 to a value between 0 and 1
-        let fixed_value = (simplex_value + FixedTrait::from_unscaled_felt(1))
-            / FixedTrait::from_unscaled_felt(2);
-
-        // make it an integer between 0 and 100
-        let value: u8 = FixedTrait::floor(fixed_value * FixedTrait::from_unscaled_felt(100))
-            .try_into()
-            .unwrap();
-
-        if (value > 70) {
-            return 3; // Sea
-        } else if (value > 60) {
-            return 2; // Desert
-        } else if (value > 53) {
-            return 1; // Forest
-        } else {
-            return 0; // Plain
-        }
     }
+
+    // // @dev: Game over part
+    // fn player_dead(world: IWorldDispatcher, id: u8) {
+    //     let pos = get!(world, id, (Position));
+    //     let empty_player = starknet::contract_address_const::<0>();
+
+    //     let id_felt: felt252 = id.into();
+    //     let entity_keys = array![id_felt].span();
+    //     let player = get!(world, id, (PlayerAddress)).player;
+    //     let player_felt: felt252 = player.into();
+    //     // Remove player address and ID mappings
+
+    //     let mut layout = array![];
+
+    //     world.delete_entity('PlayerID', array![player_felt].span(), layout.span());
+    //     world.delete_entity('PlayerAddress', entity_keys, layout.span());
+
+    //     set!(world, (PlayerID { player, id: 0 }));
+    //     set!(world, (Position { id, x: 0, y: 0 }, RPSType { id, rps: 0 }));
+
+    //     // Remove player components
+    //     world.delete_entity('Position', entity_keys, layout.span());
+    //     world.delete_entity('Score', entity_keys, layout.span());
+    // }
 
     // @dev: Returns true if player wins
-    fn encounter_win(ply_type: u8, adv_type: u8) -> bool {
-        assert(adv_type != ply_type, 'occupied by same type');
-        if (ply_type == 'r' && adv_type == 's')
-            || (ply_type == 'p' && adv_type == 'r')
-            || (ply_type == 's' && adv_type == 'p') {
-            return true;
-        }
-        false
-    }
+    //If the remaining tile is 0 then he wins
+    // fn encounter_win(ply_type: u8, adv_type: u8) -> bool {
+    //     assert(adv_type != ply_type, 'occupied by same type');
+    //     if (ply_type == 'r' && adv_type == 's')
+    //         || (ply_type == 'p' && adv_type == 'r')
+    //         || (ply_type == 's' && adv_type == 'p') {
+    //         return true;
+    //     }
+    //     false
+    // }
 
     // @dev: Returns random spawn coordinates
-    fn spawn_coords(world: IWorldDispatcher, player: felt252, mut salt: felt252) -> (u8, u8) {
+    fn spawn_tile_type(world: IWorldDispatcher, player: felt252, mut salt: felt252) -> (u8, u8) {
         let mut x = 10;
         let mut y = 10;
+        let mut z = 10;
         loop {
             let hash = pedersen::pedersen(player, salt);
             let rnd_seed = match u128s_from_felt252(hash) {
@@ -296,12 +251,15 @@ mod actions {
             };
             let (rnd_seed, x_) = u128_safe_divmod(rnd_seed, X_RANGE.try_into().unwrap());
             let (rnd_seed, y_) = u128_safe_divmod(rnd_seed, Y_RANGE.try_into().unwrap());
+            let (rnd_seed, z_) = u128_safe_divmod(rnd_seed, Z_RANGE.try_into().unwrap());
             let x_: felt252 = x_.into();
             let y_: felt252 = y_.into();
+            let z_: felt252 = z_.into();
 
             x = ORIGIN_OFFSET + x_.try_into().unwrap();
             y = ORIGIN_OFFSET + y_.try_into().unwrap();
-            let occupied = player_at_position(world, x, y);
+            z = ORIGIN_OFFSET + z_.try_into().unwrap();
+            let occupied = TileAtPosition(world, x, y);
             if occupied == 0 {
                 break;
             } else {
