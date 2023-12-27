@@ -19,7 +19,7 @@ mod actions {
     // import models
     use emojiman::models::{
         GAME_DATA_KEY, GameData, Direction, Vec2, Position, PlayerAtPosition, RPSType, Energy,
-        PlayerID, PlayerAddress
+        PlayerID, PlayerAddress, Tile, Score, TileAtPosition
     };
 
     // import utils
@@ -47,7 +47,48 @@ mod actions {
     #[external(v0)]
     impl ActionsImpl of IActions<ContractState> {
         // Spawns the player on to the map
-        fn spawn(self: @ContractState, rps: u8) {
+        // fn spawn(self: @ContractState, rps: u8) {
+        //     // world dispatcher
+        //     let world = self.world_dispatcher.read();
+
+        //     // player address
+        //     let player = get_caller_address();
+
+        //     // game data
+        //     let mut game_data = get!(world, GAME_DATA_KEY, (GameData));
+
+        //     // increment player count
+        //     game_data.number_of_players += 1;
+
+        //     // NOTE: save game_data model with the set! macro
+        //     set!(world, (game_data));
+
+        //     // assert rps type
+        //     assert(rps == 'r' || rps == 'p' || rps == 's', 'only r, p or s type allowed');
+
+        //     // get player id 
+        //     let mut player_id = get!(world, player, (PlayerID)).id;
+
+        //     // if player id is 0, assign new id
+        //     if player_id == 0 {
+        //         // Player not already spawned, prepare ID to assign
+        //         player_id = assign_player_id(world, game_data.number_of_players, player);
+        //     } else {
+        //         // Player already exists, clear old position for new spawn
+        //         let pos = get!(world, player_id, (Position));
+        //         clear_player_at_position(world, pos.x, pos.y);
+        //     }
+
+        //     // set player type
+        //     set!(world, (RPSType { id: player_id, rps }));
+
+        //     // spawn on random position
+        //     let (x, y) = spawn_coords(world, player.into(), player_id.into());
+
+        //     // set player position
+        //     player_position_and_energy(world, player_id, x, y, INITIAL_ENERGY);
+        // }
+        fn spawn(self: @ContractState) {
             // world dispatcher
             let world = self.world_dispatcher.read();
 
@@ -55,16 +96,10 @@ mod actions {
             let player = get_caller_address();
 
             // game data
-            let mut game_data = get!(world, GAME_DATA_KEY, (GameData));
-
-            // increment player count
-            game_data.number_of_players += 1;
+            let mut game_data = get!(world, GAME_DATA_KEY, (Score));
 
             // NOTE: save game_data model with the set! macro
             set!(world, (game_data));
-
-            // assert rps type
-            assert(rps == 'r' || rps == 'p' || rps == 's', 'only r, p or s type allowed');
 
             // get player id 
             let mut player_id = get!(world, player, (PlayerID)).id;
@@ -72,25 +107,21 @@ mod actions {
             // if player id is 0, assign new id
             if player_id == 0 {
                 // Player not already spawned, prepare ID to assign
-                player_id = assign_player_id(world, game_data.number_of_players, player);
+                player_id = assign_player_id(world, game_data.id, player);
             } else {
                 // Player already exists, clear old position for new spawn
                 let pos = get!(world, player_id, (Position));
                 clear_player_at_position(world, pos.x, pos.y);
             }
 
-            // set player type
-            set!(world, (RPSType { id: player_id, rps }));
-
             // spawn on random position
-            let (x, y) = spawn_coords(world, player.into(), player_id.into());
-
-            // set player position
-            player_position_and_energy(world, player_id, x, y, INITIAL_ENERGY);
+            set!(world, (TileAtPosition { x: 100_u16, y: 100_u16, _type: Tile::Town(()) }));
+            // // set player position
+            player_position_and_energy(world, player_id, x, y, 0_u8, INITIAL_ENERGY);
         }
 
         // Queues move for player to be processed later
-        fn move(self: @ContractState, dir: Direction) {
+        fn move(self: @ContractState, dir: Direction, props: Tile) {
             // world dispatcher
             let world = self.world_dispatcher.read();
 
@@ -101,10 +132,7 @@ mod actions {
             let id = get!(world, player, (PlayerID)).id;
 
             // player position and energy
-            let (pos, energy) = get!(world, id, (Position, Energy));
-
-            // Clear old position
-            clear_player_at_position(world, pos.x, pos.y);
+            let (pos, score) = get!(world, id, (Position, Score));
 
             // Get new position
             let Position{id, x, y } = next_position(pos, dir);
@@ -196,8 +224,17 @@ mod actions {
     }
 
     // @dev: Sets player position and energy
-    fn player_position_and_energy(world: IWorldDispatcher, id: u8, x: u8, y: u8, amt: u8) {
-        set!(world, (PlayerAtPosition { x, y, id }, Position { x, y, id }, Energy { id, amt },));
+    fn player_position_and_energy(
+        world: IWorldDispatcher, id: u8, x: u8, y: u8, score: u8, moves: u8
+    ) {
+        set!(
+            world,
+            (
+                PlayerAtPosition { x, y, id },
+                Position { x, y, id },
+                Score { game: GAME_DATA_KEY, id: id, score: score, moves: moves },
+            )
+        );
     }
 
     // @dev: Kills player

@@ -24,6 +24,7 @@ impl DirectionIntoFelt252 of Into<Direction, felt252> {
     }
 }
 
+
 // Constant definition for a game data key. This allows us to fetch this model using the key.
 const GAME_DATA_KEY: felt252 = 'game';
 
@@ -101,3 +102,73 @@ struct GameData {
     number_of_players: u8,
     available_ids: u256, // Packed u8s?
 }
+
+
+// HEX GAME
+
+#[derive(Serde, Copy, Drop, Introspect)]
+enum Tile {
+    None,
+    Town,
+    Street,
+    Tower,
+    Park,
+}
+
+impl TileIntoFelt252 of Into<Tile, felt252> {
+    fn into(self: Tile) -> felt252 {
+        match self {
+            Tile::None(()) => 0,
+            Tile::Town(()) => 1,
+            Tile::Street(()) => 2,
+            Tile::Tower(()) => 3,
+            Tile::Park(()) => 4,
+        }
+    }
+}
+
+#[derive(Model, Copy, Drop, Serde)]
+struct Tiles {
+    #[key]
+    index: u16,
+    x: u16,
+    y: u16,
+    _type: felt252
+}
+
+
+#[derive(Model, Copy, Drop, Serde)]
+struct TileAtPosition {
+    #[key]
+    x: u16,
+    #[key]
+    y: u16,
+    _type: Tile
+}
+
+#[derive(Model, Copy, Drop, Serde)]
+struct PlayerAddress1 {
+    #[key]
+    id: u8,
+    player: ContractAddress,
+}
+
+
+// Structure representing a player's ID with a ContractAddress
+#[derive(Model, Copy, Drop, Serde)]
+struct PlayerID1 {
+    #[key]
+    player: ContractAddress,
+    id: u8,
+}
+
+#[derive(Model, Copy, Drop, Serde)]
+struct Score {
+    #[key]
+    game: felt252,
+    #[key]
+    id: u8,
+    score: u8,
+    moves: u8
+}
+
