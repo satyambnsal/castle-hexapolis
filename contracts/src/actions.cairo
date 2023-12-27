@@ -12,6 +12,12 @@ mod actions {
     use starknet::{ContractAddress, get_caller_address};
     use debug::PrintTrait;
     use castle_hexapolis::interface::IActions;
+    use starknet::{get_block_timestamp};
+    use poseidon::PoseidonTrait;
+    use hash::HashStateTrait;
+
+
+    // use integer::{u128s_from_felt252, U128sFromFelt252Result};
 
     // import models
     use castle_hexapolis::models::{
@@ -20,10 +26,10 @@ mod actions {
     };
 
     // import config
-    use castle_hexapolis::config::{GRID_SIZE, REMAINING_MOVES_DEFAULT};
+    use castle_hexapolis::config::{GRID_SIZE, REMAINING_MOVES_DEFAULT, MIN_TILE_VAL, MAX_TILE_VAL};
 
     // import integer
-    use integer::{u128s_from_felt252, U128sFromFelt252Result, u128_safe_divmod};
+    use integer::{u128s_from_felt252, U128sFromFelt252Result, u128_safe_divmod, u128_to_felt252};
 
     // resource of world
     const DOJO_WORLD_RESOURCE: felt252 = 0;
@@ -98,9 +104,31 @@ mod actions {
             )
         }
 
+
         // ----- ADMIN FUNCTIONS -----
         // These functions are only callable by the owner of the world
         fn cleanup(self: @ContractState) {}
+
+        fn produce_random_tiletype(self: @ContractState) -> TileType {
+            let seed: u64 = get_block_timestamp();
+            let mut seed_u256: u256 = seed.into();
+
+            let val: u128 = randomize_range_usize(ref seed_u256, MIN_TILE_VAL, MAX_TILE_VAL);
+
+            let val1: felt252 = u128_to_felt252(val);
+
+            if (val1 == 1) {
+                return TileType::WindMill(());
+            } else if (val1 == 2) {
+                return TileType::Grass(());
+            } else if (val1 == 3) {
+                return TileType::Street(());
+            } else if (val1 == 4) {
+                return TileType::Center(());
+            } else {
+                return TileType::Port(());
+            }
+        }
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -132,7 +160,6 @@ mod actions {
         set!(world, (RemainingMoves { player_id, moves }));
     }
 
-
     // @dev: Returns player id at tile
     // fn player_at_tile(world: IWorldDispatcher, x: u8, y: u8) -> u128 {
     //     get!(world, (x, y), (Tile)).player_id
@@ -159,6 +186,69 @@ mod actions {
         // t1.print();
 
         tile.tile_type != TileType::Empty
+    }
+
+    fn distance(self: Tile, b: Tile) -> u8 {
+        let mut dx: u8 = 0;
+        if self.row > b.col {
+            dx = self.row - b.row;
+        } else {
+            dx = b.row - self.row;
+        };
+
+        let mut dy: u8 = 0;
+        if self.col > b.col {
+            dy = self.col - b.col;
+        } else {
+            dy = b.col - self.col;
+        };
+        dx * dx + dy * dy
+    }
+
+    fn is_close(self: Tile, b: Tile) -> bool {
+        distance(self, b) <= 1
+    }
+
+    fn _rnd_rnd_(rnd: u256) -> u256 {
+        let value: u128 = hash_u128(rnd.high, rnd.low);
+        u256 { high: rnd.high, low: value, }
+    }
+
+    // randomizes a value lower than max (exclusive)
+    // returns the new rnd and the value
+
+    fn randomize_value(ref rnd: u256, max: u128) -> u128 {
+        rnd = _rnd_rnd_(rnd);
+        (rnd.low % max)
+    }
+
+    fn randomize_range(ref rnd: u256, min: u128, max: u128) -> u128 {
+        rnd = _rnd_rnd_(rnd);
+        (min + rnd.low % (max - min + 1))
+    }
+
+    fn randomize_range_usize(ref rnd: u256, min: u128, max: u128) -> u128 {
+        randomize_range(ref rnd, min, max).try_into().unwrap()
+    }
+    fn hash_felt(seed: felt252, offset: felt252) -> felt252 {
+        pedersen::pedersen(seed, offset)
+    }
+
+    fn hash_u128(seed: u128, offset: u128) -> u128 {
+        let hash = hash_felt(seed.into(), offset.into());
+        felt_to_u128(hash)
+    }
+
+    fn felt_to_u128(value: felt252) -> u128 {
+        match u128s_from_felt252(value) {
+            U128sFromFelt252Result::Narrow(x) => x,
+            U128sFromFelt252Result::Wide((_, x)) => x,
+        }
+    }
+
+    // upgrade a u128 hash to u256
+    fn hash_u128_to_u256(value: u128) -> u256 {
+        u256 { low: value, high: hash_u128(value, value) }
     }
 
     fn neighbor(world: IWorldDispatcher, tile: Tile, direction: Direction) -> Tile {

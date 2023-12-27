@@ -104,6 +104,16 @@ mod tests {
         let tile1 = (4, 4, TileType::Grass);
         actions_.place_tile(tile1);
     }
+
+    //Now it will return only 2, but in actualy dev env it will be randomized between 1 and 5
+    #[test]
+    #[available_gas(300000000000)]
+    fn test_produce_random_tiletype_test() {
+        let (caller, world, actions_) = spawn_world();
+        let res = actions_.produce_random_tiletype();
+        let res1: u8 = res.into();
+        res1.print();
+    }
 // #[test]
 // #[available_gas(30000000)]
 // fn dead_test() {

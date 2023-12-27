@@ -13,8 +13,8 @@ enum TileType {
 }
 
 // Implementation of a trait to convert TileType enum into felt252 data type
-impl TileTypeIntoFelt252 of Into<TileType, felt252> {
-    fn into(self: TileType) -> felt252 {
+impl TileTypeIntoU8 of Into<TileType, u8> {
+    fn into(self: TileType) -> u8 {
         match self {
             TileType::Empty(()) => 0,
             TileType::WindMill(()) => 1,

@@ -4,3 +4,6 @@
 
 const GRID_SIZE: u8 = 3;
 const REMAINING_MOVES_DEFAULT: u8 = 25;
+
+const MIN_TILE_VAL: u128 = 1_u128;
+const MAX_TILE_VAL: u128 = 5_u128;
