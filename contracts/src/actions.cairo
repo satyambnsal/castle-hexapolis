@@ -96,12 +96,18 @@ mod actions {
             assert(!is_tile_occupied(world, row_1, col_1, player_id), 'tile is already occupied');
 
             // check if neighbour tile is settled
-            assert(
-                is_neighbor_settled(
-                    world, Tile { row: row_1, col: col_1, player_id, tile_type: tile_type_1 }
-                ),
-                'neighbour is not settled'
-            )
+            let mut new_tile = Tile { row: row_1, col: col_1, player_id, tile_type: tile_type_1, };
+            assert(is_neighbor_settled(world, new_tile), 'neighbour is not settled');
+
+            let mut player_score = get!(world, player_id, (Score)).score;
+            let mut remaining_moves = get!(world, player_id, (RemainingMoves)).moves;
+
+            set!(world, (new_tile));
+
+            player_score += scoring()
+            remaining_moves -= 1;
+
+            scoring()
         }
 
 
@@ -151,6 +157,36 @@ mod actions {
         );
         player_id
     }
+
+    fn scoring(world: IWorldDispatcher, tile1: Tile, tile2: Tile) -> u8 {
+        let flag1: bool = is_close(tile1, tile2);
+        let flag2: bool = is_tile_occupied(world, tile2.row, tile2.col, tile2.player_id);
+        let tile1_type_value: u8 = tile1.tile_type.into();
+        let tile2_type_value: u8 = tile2.tile_type.into();
+        if (flag1 && flag2) {
+            if (tile1_type_value == 3 && tile2_type_value == 4)
+                || (tile1_type_value == 4 && tile2_type_value == 3) {
+                return 1;
+            } // Street connected to Street
+            else if tile1_type_value == 3 && tile2_type_value == 3 {
+                return 3;
+            } // Windturbine near non-Windturbine
+            else if tile1_type_value == 1 && tile2_type_value != 1 {
+                return 1;
+            } // Windturbine near Windturbine
+            else if tile1_type_value == 1 && tile2_type_value == 1 {
+                return 3;
+            } // Park near Park
+            else if tile1_type_value == 2 && tile2_type_value == 2 {
+                return 5;
+            } // Park near non-Park
+            else if tile1_type_value == 2 {
+                return 1;
+            }
+        }
+        0
+    }
+
 
     fn assign_score(world: IWorldDispatcher, player_id: u128, score: u8) {
         set!(world, (Score { player_id, score }))
