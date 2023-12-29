@@ -494,7 +494,7 @@ mod actions {
                 if (*group.at(i).counted == false) {
                     uncountedParks.append(group.at(i));
                 }
-            }
+            };
             score += 5;
         } else if (tile.tile_type.into() == 3_u32) {
             let mut i = 0;
