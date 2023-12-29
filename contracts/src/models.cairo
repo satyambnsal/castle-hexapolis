@@ -13,18 +13,20 @@ enum TileType {
 }
 
 // Implementation of a trait to convert TileType enum into felt252 data type
-impl TileTypeIntoFelt252 of Into<TileType, felt252> {
-    fn into(self: TileType) -> felt252 {
+
+impl TileTypeIntoU32 of Into<TileType, u32> {
+    fn into(self: TileType) -> u32 {
         match self {
-            TileType::Empty(()) => 0,
-            TileType::WindMill(()) => 1,
-            TileType::Grass(()) => 2,
-            TileType::Street(()) => 3,
-            TileType::Center(()) => 4,
-            TileType::Port(()) => 5
+            TileType::Empty(()) => 0_u32,
+            TileType::WindMill(()) => 1_u32,
+            TileType::Grass(()) => 2_u32,
+            TileType::Street(()) => 3_u32,
+            TileType::Center(()) => 4_u32,
+            TileType::Port(()) => 5_u32
         }
     }
 }
+
 
 #[derive(Model, Copy, Drop, Serde)]
 struct Tile {

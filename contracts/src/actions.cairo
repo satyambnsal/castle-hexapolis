@@ -11,7 +11,11 @@ mod actions {
     use core::traits::Into;
     use starknet::{ContractAddress, get_caller_address};
     use debug::PrintTrait;
+    use clone::Clone;
     use castle_hexapolis::interface::IActions;
+    // use alexandria_data_structures::{queue, array_ext};
+    use alexandria_data_structures::queue::{Queue, QueueTrait};
+    use alexandria_data_structures::array_ext::{ArrayTraitExt, SpanTraitExt};
 
     // import models
     use castle_hexapolis::models::{
@@ -191,6 +195,45 @@ mod actions {
     fn assign_remaining_moves(world: IWorldDispatcher, player_id: u128, moves: u8) {
         set!(world, (RemainingMoves { player_id, moves }));
     }
+
+    fn get_connected(world: IWorldDispatcher, tile1: Tile) -> Array<Tile> {
+        let mut connected_tiles: Array<Tile> = ArrayTrait::new();
+        let mut visited: Array<u32> = ArrayTrait::new();
+        let mut queue = QueueTrait::<Tile>::new();
+        queue.enqueue(tile1);
+
+        if (queue.len() > 0) {
+            let value = queue.dequeue().unwrap();
+            if (!visited.span().contains(value.tile_type.into())) {
+                connected_tiles.append(tile1);
+                visited.append(value.tile_type.into());
+            }
+
+            let mut i: u32 = 0_u32;
+            let mut dummy_Array = ArrayTrait::new();
+            dummy_Array.append(5_u32);
+            let neighbour_array: Array<Tile> = get_neighbors(world, tile1);
+            loop {
+                if (i > neighbour_array.len()) {
+                    break;
+                }
+
+                let val: Tile = *neighbour_array.at(i);
+                let tile_type: TileType = val.tile_type;
+
+                if ((*neighbour_array.at(i).tile_type == value.tile_type)
+                    || (value.tile_type.into() == 3_u32
+                        && tile_type == TileType::Port) //  should be added in as well
+                    && !visited.span().contains(i) == true) {
+                    queue.enqueue(*neighbour_array.at(i));
+                }
+            }
+        }
+
+        connected_tiles
+    }
+
+    impl QueueTileDrop of Drop<Queue<Tile>>;
 
 
     // @dev: Returns player id at tile
@@ -388,6 +431,7 @@ mod actions {
     }
 
     fn calculate_score_for_tile(world: IWorldDispatcher, tile: Tile) -> u8 {
+        let mut score = 0;
         if (tile.counted) {
             return 0;
         }
@@ -436,10 +480,73 @@ mod actions {
             }
 
             return score;
-        } else {
+        } else if (tile.tile_type.into() == 2_u32) {
             // Implement logic for tiletype street and grass
-            return 1;
+            let group: Array<Tile> = get_connected(world, tile);
+            let mut uncountedParks = ArrayTrait::new();
+
+            let mut i = 0;
+            loop {
+                if (i > group.len()) {
+                    break;
+                }
+
+                if (*group.at(i).counted == false) {
+                    uncountedParks.append(group.at(i));
+                }
+            }
+        //to be done
+
+        } else if (tile.tile_type.into() == 3_u32) {
+            let mut i = 0;
+            let neighbour_array: Array<Tile> = get_neighbors(world, tile);
+
+            loop {
+                if (i > neighbour_array.len()) {
+                    break;
+                }
+                if (*neighbour_array.at(i).tile_type == TileType::Center && !tile.counted) {
+                    score += 1;
+                //counted to true
+                }
+            };
+
+            let group: Array<Tile> = get_connected(world, tile);
+            let group2: Array<Tile> = group.clone();
+            let mut connectedToCenter: bool = false;
+
+            let mut j = 0;
+            loop {
+                if (j > group.len()) {
+                    break;
+                }
+
+                if (*group.at(j).tile_type == TileType::Street) {
+                    connectedToCenter = true;
+                }
+            };
+
+            if (connectedToCenter) {
+                let mut k = 0;
+                loop {
+                    if (k > group2.len()) {
+                        break;
+                    }
+
+                    let val: Tile = *group2.at(k);
+
+                    if (val.counted == false) {
+                        if (val.tile_type == TileType::Street) {
+                            score += 5;
+                        } else {
+                            score += 1;
+                        }
+                    };
+                // counted to true
+                }
+            }
         }
+        score
     }
 
     fn validate_tile_type(tile_type: TileType) -> bool {

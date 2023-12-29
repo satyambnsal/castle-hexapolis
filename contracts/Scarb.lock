@@ -2,9 +2,34 @@
 version = 1
 
 [[package]]
+name = "alexandria_data_structures"
+version = "0.1.0"
+source = "git+https://github.com/keep-starknet-strange/alexandria.git?rev=e3af7edb130aa376fb2435820788c7bba2e4593a#e3af7edb130aa376fb2435820788c7bba2e4593a"
+dependencies = [
+ "alexandria_encoding",
+]
+
+[[package]]
+name = "alexandria_encoding"
+version = "0.1.0"
+source = "git+https://github.com/keep-starknet-strange/alexandria.git?rev=e3af7edb130aa376fb2435820788c7bba2e4593a#e3af7edb130aa376fb2435820788c7bba2e4593a"
+dependencies = [
+ "alexandria_math",
+]
+
+[[package]]
+name = "alexandria_math"
+version = "0.2.0"
+source = "git+https://github.com/keep-starknet-strange/alexandria.git?rev=e3af7edb130aa376fb2435820788c7bba2e4593a#e3af7edb130aa376fb2435820788c7bba2e4593a"
+dependencies = [
+ "alexandria_data_structures",
+]
+
+[[package]]
 name = "castle_hexapolis"
 version = "0.1.0"
 dependencies = [
+ "alexandria_data_structures",
  "cubit",
  "dojo",
 ]

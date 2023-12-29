@@ -9,6 +9,7 @@ sierra-replace-ids = true
 [dependencies]
 dojo = { git = "https://github.com/dojoengine/dojo", tag = "v0.4.1" }
 cubit = { git = "https://github.com/akhercha/cubit", rev = "d3869a3f0c47e5ed229bbbfe2fce3fc0510cbc8a" }
+alexandria_data_structures = { git = "https://github.com/keep-starknet-strange/alexandria.git", rev = "e3af7edb130aa376fb2435820788c7bba2e4593a" }
 
 [[target.dojo]]
 
