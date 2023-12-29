@@ -495,8 +495,7 @@ mod actions {
                     uncountedParks.append(group.at(i));
                 }
             }
-        //to be done
-
+            score += 5;
         } else if (tile.tile_type.into() == 3_u32) {
             let mut i = 0;
             let neighbour_array: Array<Tile> = get_neighbors(world, tile);
