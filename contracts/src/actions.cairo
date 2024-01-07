@@ -10,16 +10,18 @@ mod actions {
     use core::option::OptionTrait;
     use core::array::ArrayTrait;
     use core::traits::Into;
-    use starknet::{ContractAddress, get_caller_address};
+    use starknet::{ContractAddress, get_caller_address, get_contract_address};
     use debug::PrintTrait;
     use castle_hexapolis::interface::IActions;
     use castle_hexapolis::queue::{Queue, QueueTrait};
     use core::dict::Felt252Dict;
     // import models
     use castle_hexapolis::models::{
-        GAME_DATA_KEY, TileType, Tile, GameData, Score, RemainingMoves, PlayerAddress, PlayerId,
-        Direction
+        GAME_DATA_KEY, TileType, Tile, ContractsRegistry, GameData, Score, RemainingMoves,
+        PlayerAddress, PlayerId, Direction
     };
+    // import erc20trait
+    use castle_hexapolis::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
 
     // import config
     use castle_hexapolis::config::{GRID_SIZE, REMAINING_MOVES_DEFAULT};
@@ -30,6 +32,12 @@ mod actions {
     // resource of world
     const DOJO_WORLD_RESOURCE: felt252 = 0;
 
+    // contract storage
+    struct Storage {
+        erc20_contract_address: ContractAddress,
+        has_claimed: LegacyMap::<ContractAddress, bool>,
+    }
+
     // ---------------------------------------------------------------------------------------------
     // ---------------------------------------------------------------------------------------------
     // --------- EXTERNALS -------------------------------------------------------------------------
@@ -39,7 +47,28 @@ mod actions {
     // impl: implement functions specified in trait
     #[external(v0)]
     impl ActionsImpl of IActions<ContractState> {
-        fn spawn(self: @ContractState) {
+        fn set_lords_address(ref self: ContractState, lords_address: ContractAddress) {
+            self.erc20_contract_address.write(lords_address);
+            let world = self.world_dispatcher.read();
+            let mut contracts: ContractsRegistry = get!(
+                world, 'castle_hexapolis', ContractsRegistry
+            );
+            contracts.lords_address = lords_address.into();
+            set!(world, (contracts));
+        }
+        fn faucet(ref self: ContractState, amount: u128) {
+            let world = self.world_dispatcher.read();
+            let from: ContractAddress = get_contract_address();
+            let to: ContractAddress = get_caller_address();
+            let has_claimed = self.has_claimed.read(to);
+            assert(amount >= 5, 'Amount exceeded');
+            assert(has_claimed == false, 'Has already claimed');
+            let lordsDispatcher = IERC20Dispatcher {
+                contract_address: self.erc20_contract_address.read()
+            };
+            lordsDispatcher.transfer_from(from, to, amount);
+        }
+        fn spawn(self: @ContractState, amount: u128) {
             let world = self.world_dispatcher.read();
             let player_address = get_caller_address();
 
@@ -53,7 +82,21 @@ mod actions {
 
             let player_id = assign_player_id(world, game_data.number_of_players, player_address);
 
-            assign_score(world, player_id, 0);
+            //Minimum amount should be 5
+            assert(amount >= 5, 'Entry cost is minimum 5');
+
+            // Transfering the token to the game contract
+            let lordsDispatcher = IERC20Dispatcher {
+                contract_address: self.erc20_contract_address.read()
+            };
+            let from: ContractAddress = get_caller_address();
+            let to: ContractAddress = get_contract_address();
+            let finalAmount: u128 = amount;
+            lordsDispatcher.transfer_from(from, to, finalAmount);
+
+            //getting token_locked
+
+            assign_score(world, player_id, 0, amount, 0);
             assign_remaining_moves(world, player_id, REMAINING_MOVES_DEFAULT);
 
             place_default_tiles(world, player_id);
@@ -62,6 +105,11 @@ mod actions {
         fn place_tile(self: @ContractState, tiles: Span<(u8, u8, TileType)>) {
             let world = self.world_dispatcher.read();
             let player_address = get_caller_address();
+            let lordsDispatcher = IERC20Dispatcher {
+                contract_address: self.erc20_contract_address.read()
+            };
+
+            let from: ContractAddress = get_contract_address();
             // Get player ID
             let player_id = get!(world, player_address, (PlayerId)).player_id;
 
@@ -157,7 +205,33 @@ mod actions {
 
             remaining_moves -= 1;
 
-            set_player_score_and_remaining_moves(world, player_id, player_score, remaining_moves);
+            let token_locked = get!(world, player_id, (Score)).token_locked;
+
+            set_player_score_and_remaining_moves(
+                world, player_id, player_score, remaining_moves, token_locked, 0
+            );
+
+            let mut remaining_moves = get!(world, player_id, (RemainingMoves)).moves;
+            let total_score = get!(world, player_id, (Score)).score;
+
+            if (remaining_moves <= 1) {
+                if (total_score >= 60) {
+                    lordsDispatcher.transfer_from(from, player_address, 1);
+                    set_player_score_and_remaining_moves(
+                        world, player_id, player_score, remaining_moves, token_locked, 1
+                    );
+                } else if (total_score >= 85) {
+                    lordsDispatcher.transfer_from(from, player_address, 2);
+                    set_player_score_and_remaining_moves(
+                        world, player_id, player_score, remaining_moves, token_locked, 2
+                    );
+                } else if (total_score >= 100) {
+                    lordsDispatcher.transfer_from(from, player_address, 4);
+                    set_player_score_and_remaining_moves(
+                        world, player_id, player_score, remaining_moves, token_locked, 4
+                    );
+                }
+            }
         }
 
         // ----- ADMIN FUNCTIONS -----
@@ -186,8 +260,10 @@ mod actions {
         player_id
     }
 
-    fn assign_score(world: IWorldDispatcher, player_id: u128, score: u8) {
-        set!(world, (Score { player_id, score }))
+    fn assign_score(
+        world: IWorldDispatcher, player_id: u128, score: u8, token_locked: u128, rewards: u128
+    ) {
+        set!(world, (Score { player_id, score, token_locked, rewards }))
     }
 
     fn assign_remaining_moves(world: IWorldDispatcher, player_id: u128, moves: u8) {
@@ -202,9 +278,17 @@ mod actions {
 
     // @dev: Sets player score and remaining moves
     fn set_player_score_and_remaining_moves(
-        world: IWorldDispatcher, player_id: u128, score: u8, moves: u8
+        world: IWorldDispatcher,
+        player_id: u128,
+        score: u8,
+        moves: u8,
+        token_locked: u128,
+        rewards: u128
     ) {
-        set!(world, (Score { player_id, score }, RemainingMoves { player_id, moves }));
+        set!(
+            world,
+            (Score { player_id, score, token_locked, rewards }, RemainingMoves { player_id, moves })
+        );
     }
 
 

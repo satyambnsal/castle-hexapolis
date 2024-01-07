@@ -57,7 +57,9 @@ struct PlayerAddress {
 struct Score {
     #[key]
     player_id: u128,
-    score: u8
+    score: u8,
+    token_locked: u128,
+    rewards: u128
 }
 
 #[derive(Model, Copy, Drop, Serde)]
@@ -98,4 +100,11 @@ impl DirectionIntoFelt252 of Into<Direction, felt252> {
             Direction::SouthEast => 5,
         }
     }
+}
+
+#[derive(Model, Copy, Drop, Serde)]
+struct ContractsRegistry {
+    #[key]
+    id: felt252, // GAME_DATA_KEY
+    lords_address: felt252,
 }

@@ -5,3 +5,5 @@ mod interface;
 mod config;
 mod testing;
 mod queue;
+mod lords;
+mod erc20;
